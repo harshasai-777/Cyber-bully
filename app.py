@@ -1263,24 +1263,26 @@ with tab_image:
 
             # Attempt OCR extraction
             ocr_text = ""
-            ocr_success = False
             if HAS_PYTESSERACT:
                 try:
                     ocr_text = pytesseract.image_to_string(active_image).strip()
-                    if ocr_text:
-                        ocr_success = True
                 except Exception:
-                    ocr_success = False
+                    ocr_text = ""
 
-            if not ocr_success:
-                ocr_text = fallback_text
+            # Ensure the core comment payload is present if OCR missed lower text or on demo presets
+            if fallback_text:
+                if not ocr_text or len(ocr_text) < 10:
+                    ocr_text = fallback_text
+                elif fallback_text.lower() not in ocr_text.lower():
+                    ocr_text = f"{ocr_text}\n\n{fallback_text}"
 
+            dynamic_key = f"ocr_text_{demo_img_choice}_{uploaded_image.name if uploaded_image else 'default'}"
             extracted_comment = st.text_area(
                 "Review or edit extracted text before moderation:",
                 value=ocr_text,
                 height=110,
                 placeholder="OCR text extracted from screenshot will appear here...",
-                key="ocr_extracted_text",
+                key=dynamic_key,
             )
 
             ocr_audit_clicked = st.button("🔍  Moderate Extracted Text", type="primary", use_container_width=True, key="btn_ocr_moderate")
