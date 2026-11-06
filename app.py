@@ -17,6 +17,13 @@ import re
 import sys
 from pathlib import Path
 
+from PIL import Image
+try:
+    import pytesseract
+    HAS_PYTESSERACT = True
+except ImportError:
+    HAS_PYTESSERACT = False
+
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.patches as mpatches
@@ -739,6 +746,227 @@ def moderate_single_comment(text: str, model, tokenizer, toxicity_threshold: flo
     }
 
 
+def render_moderation_results(res: dict, toxicity_threshold: float, key_suffix: str = ""):
+    """Renders the standard Step 2 moderation analysis dashboard."""
+    st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="section-label"><span class="dot"></span> Step 2 — Prediction Analysis & Automated Moderation</div>',
+        unsafe_allow_html=True,
+    )
+
+    is_flagged = res["is_flagged"]
+    top_toxic_category = res["top_category"]
+    top_toxic_prob = res["top_prob"]
+    aggregate_toxicity = res["aggregate_toxicity"]
+    safe_prob = res["safe_prob"]
+    prob_df = res["prob_df"]
+    policy_triggered = res["policy_triggered"]
+    affirmation_triggered = res["affirmation_triggered"]
+
+    # ── Metric Cards ──────────────────────────────────────────────────────
+    if is_flagged:
+        verdict_text = f"🚨 {top_toxic_category.replace('_', ' ').title()}"
+        card1_cls = "danger"
+        val1_cls = "red"
+        risk_cls = "danger"
+        val2_cls = "red"
+        cert_val = top_toxic_prob
+        cert_sub = "Top toxic category confidence"
+    else:
+        verdict_text = "✅ Not Cyberbullying"
+        card1_cls = "safe"
+        val1_cls = "green"
+        risk_cls = "safe"
+        val2_cls = "green"
+        cert_val = safe_prob
+        cert_sub = "Safe content confidence"
+
+    st.markdown(
+        f"""
+        <div class="metric-row">
+            <div class="metric-card {card1_cls}">
+                <div class="metric-label">Primary Verdict</div>
+                <div class="metric-value {val1_cls}" style="font-size:1.2rem">{verdict_text}</div>
+                <div class="metric-subtext">Two-layer moderation decision</div>
+            </div>
+            <div class="metric-card {risk_cls}">
+                <div class="metric-label">Aggregate Harassment Risk</div>
+                <div class="metric-value {val2_cls}">{aggregate_toxicity:.1f}%</div>
+                <div class="metric-subtext">Cumulative toxic probability mass</div>
+            </div>
+            <div class="metric-card neutral">
+                <div class="metric-label">Category Certainty</div>
+                <div class="metric-value blue">{cert_val:.1f}%</div>
+                <div class="metric-subtext">{cert_sub}</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # ── Verdict Banner ────────────────────────────────────────────────────
+    if is_flagged:
+        if policy_triggered:
+            banner_title = "🚨 Critical Safety Violation — Direct Threat / Harassment Detected"
+            banner_body = (
+                f"<strong>Detection Mechanism:</strong> Layer 1 Safety Guard (Severe Violence &amp; Threat Policy Gate)<br>"
+                f"<strong>Assigned Category:</strong> {top_toxic_category.replace('_', ' ').title()}<br>"
+                f"<strong>Cumulative Harassment Risk:</strong> {aggregate_toxicity:.1f}%<br>"
+                f"<em>Explicit statements threatening violence or demographic attacks violate community safety standards.</em>"
+            )
+        else:
+            banner_title = "🚨 Harassment / Toxic Intent Detected"
+            banner_body = (
+                f"<strong>Detection Mechanism:</strong> Layer 2 — Fine-Tuned DistilBERT Transformer Classifier<br>"
+                f"<strong>Cumulative Harassment Risk:</strong> {aggregate_toxicity:.1f}% (Threshold: {toxicity_threshold}%)<br>"
+                f"<strong>Leading Category:</strong> {top_toxic_category.replace('_', ' ').title()} ({top_toxic_prob:.1f}%)<br>"
+                f"<em>{LABEL_DESCRIPTIONS.get(top_toxic_category, '')}</em>"
+            )
+
+        st.markdown(
+            f"""
+            <div class="verdict-banner flagged">
+                <div class="verdict-banner-title red">{banner_title}</div>
+                <p class="verdict-detail">{banner_body}</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
+        if affirmation_triggered:
+            banner_title = "✅ Safe — Positive Affirmation Verified"
+            banner_body = (
+                f"<strong>Detection Mechanism:</strong> Layer 1 Identity-Term De-biasing Guard (Empowering Affirmation)<br>"
+                f"<strong>Safe Probability:</strong> {safe_prob:.1f}%<br>"
+                f"<strong>Cumulative Toxicity Risk:</strong> Only {aggregate_toxicity:.1f}%<br>"
+                f"<em>Statement contains positive, supportive language with zero derogatory or abusive markers.</em>"
+            )
+        else:
+            banner_title = "✅ Safe — Non-Harassment Content Verified"
+            banner_body = (
+                f"<strong>Detection Mechanism:</strong> Layer 2 — Fine-Tuned DistilBERT Transformer Classifier<br>"
+                f"<strong>Safe Probability:</strong> {safe_prob:.1f}%<br>"
+                f"<strong>Cumulative Toxicity Risk:</strong> Only {aggregate_toxicity:.1f}% "
+                f"(well below the {toxicity_threshold}% safety gate)<br>"
+                f"<em>No significant harassment signal detected across any of the six classification categories.</em>"
+            )
+
+        st.markdown(
+            f"""
+            <div class="verdict-banner safe-bg">
+                <div class="verdict-banner-title green">{banner_title}</div>
+                <p class="verdict-detail">{banner_body}</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    # ── Automated Moderation Action & Censor Preview ──────────────────────
+    action_type = res["action"]
+    if action_type == "QUARANTINE":
+        pill_html = '<span class="action-pill quarantine">🛑 Quarantine & Block</span>'
+        action_desc = "Content blocked from public timeline. Marked for immediate administrator review."
+    elif action_type == "HOLD_FOR_REVIEW":
+        pill_html = '<span class="action-pill review">⚠️ Hold For Review</span>'
+        action_desc = "Content flagged with borderline risk. Sent to human moderator queue before public release."
+    else:
+        pill_html = '<span class="action-pill approve">✅ Auto-Approved</span>'
+        action_desc = "Content cleared all safety thresholds. Permitted for immediate public display."
+
+    st.markdown(
+        f"""
+        <div class="action-box">
+            <div class="action-header">
+                <div>
+                    <strong style="color:#1E293B;font-size:0.92rem;">🛡️ Automated Moderation Action & Feed Sanitizer Preview</strong>
+                    <div style="font-size:0.78rem;color:#64748B;margin-top:0.2rem;">{action_desc}</div>
+                </div>
+                <div>{pill_html}</div>
+            </div>
+            <div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#64748B;margin-bottom:0.4rem;">
+                Sanitized Feed Representation:
+            </div>
+            <div class="redacted-preview">{res["sanitized_html"]}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # ── Matplotlib Horizontal Bar Chart ───────────────────────────────────
+    st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="section-label"><span class="dot"></span> Category Probability Distribution</div>',
+        unsafe_allow_html=True,
+    )
+
+    chart_df_sorted = prob_df.sort_values("Probability (%)", ascending=True)
+    categories = chart_df_sorted["Category"].tolist()
+    values = chart_df_sorted["Probability (%)"].tolist()
+    bar_colors = ["#16A34A" if c == "not_cyberbullying" else "#DC2626" for c in categories]
+
+    fig, ax = plt.subplots(figsize=(9, 3.4))
+    fig.patch.set_facecolor("none")
+    fig.patch.set_alpha(0.0)
+    ax.set_facecolor("#F8FAFC")
+
+    bars_plot = ax.barh(
+        categories, values,
+        color=bar_colors,
+        height=0.55,
+        edgecolor="none",
+    )
+    for bar, val in zip(bars_plot, values):
+        ax.text(
+            min(val + 1.0, 101),
+            bar.get_y() + bar.get_height() / 2,
+            f"{val:.1f}%",
+            va="center",
+            ha="left",
+            fontsize=9.5,
+            fontweight="bold",
+            color="#1E293B",
+        )
+
+    ax.set_xlim(0, 108)
+    ax.set_xlabel("Probability (%)", fontsize=9.5, color="#64748B", labelpad=8)
+    ax.tick_params(axis="y", labelsize=10, colors="#1E293B", length=0)
+    ax.tick_params(axis="x", labelsize=9,  colors="#64748B", length=0)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_color("#E2E8F0")
+    ax.spines["bottom"].set_color("#E2E8F0")
+    ax.set_axisbelow(True)
+    ax.xaxis.grid(True, color="#F1F5F9", linewidth=0.8)
+
+    legend_handles = [
+        mpatches.Patch(facecolor="#DC2626", label="Toxic / Harassment"),
+        mpatches.Patch(facecolor="#16A34A", label="Safe Content"),
+    ]
+    ax.legend(
+        handles=legend_handles,
+        loc="lower right",
+        fontsize=9,
+        framealpha=0.8,
+        edgecolor="#E2E8F0",
+    )
+
+    plt.tight_layout(pad=0.8)
+
+    st.markdown('<div class="chart-card">', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="chart-title">📊 Classification Output — All Six Categories</div>',
+        unsafe_allow_html=True,
+    )
+    st.pyplot(fig, use_container_width=True)
+    plt.close(fig)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # ── Category Descriptions Reference Table ─────────────────────────────
+    with st.expander("📋  Category Descriptions & Taxonomy Reference"):
+        display_df = prob_df[["Category", "Description"]].copy()
+        st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Sidebar
 # ─────────────────────────────────────────────────────────────────────────────
@@ -861,6 +1089,7 @@ st.markdown(
             <span class="hero-badge">6-Class Classification</span>
             <span class="hero-badge">2-Layer Moderation Engine</span>
             <span class="hero-badge">Automated Feed Sanitizer</span>
+            <span class="hero-badge">OCR Image Scanner</span>
             <span class="hero-badge">Batch Queue Audit</span>
             {status_badge}
         </div>
@@ -871,10 +1100,11 @@ st.markdown(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Application Tabs: Single Inspector vs Batch Feed Queue
+# Application Tabs: Single Inspector, Image OCR, Batch Feed Queue
 # ─────────────────────────────────────────────────────────────────────────────
-tab_single, tab_batch = st.tabs([
+tab_single, tab_image, tab_batch = st.tabs([
     "🔍  Single Comment Inspector",
+    "🖼️  Screenshot & Meme OCR Scanner",
     "📁  Batch Feed Moderation Queue",
 ])
 
@@ -937,224 +1167,7 @@ with tab_single:
         with st.spinner("Analyzing semantics through two-layer moderation pipeline …"):
             res = moderate_single_comment(cleaned_input, model, tokenizer, float(toxicity_threshold))
 
-        # ── Results Header ───────────────────────────────────────────────────
-        st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
-        st.markdown(
-            '<div class="section-label"><span class="dot"></span> Step 2 — Prediction Analysis & Automated Moderation</div>',
-            unsafe_allow_html=True,
-        )
-
-        is_flagged = res["is_flagged"]
-        top_toxic_category = res["top_category"]
-        top_toxic_prob = res["top_prob"]
-        aggregate_toxicity = res["aggregate_toxicity"]
-        safe_prob = res["safe_prob"]
-        prob_df = res["prob_df"]
-        policy_triggered = res["policy_triggered"]
-        affirmation_triggered = res["affirmation_triggered"]
-
-        # ── Metric Cards ──────────────────────────────────────────────────────
-        if is_flagged:
-            verdict_text = f"🚨 {top_toxic_category.replace('_', ' ').title()}"
-            card1_cls = "danger"
-            val1_cls = "red"
-            risk_cls = "danger"
-            val2_cls = "red"
-            cert_val = top_toxic_prob
-            cert_sub = "Top toxic category confidence"
-        else:
-            verdict_text = "✅ Not Cyberbullying"
-            card1_cls = "safe"
-            val1_cls = "green"
-            risk_cls = "safe"
-            val2_cls = "green"
-            cert_val = safe_prob
-            cert_sub = "Safe content confidence"
-
-        st.markdown(
-            f"""
-            <div class="metric-row">
-                <div class="metric-card {card1_cls}">
-                    <div class="metric-label">Primary Verdict</div>
-                    <div class="metric-value {val1_cls}" style="font-size:1.2rem">{verdict_text}</div>
-                    <div class="metric-subtext">Two-layer moderation decision</div>
-                </div>
-                <div class="metric-card {risk_cls}">
-                    <div class="metric-label">Aggregate Harassment Risk</div>
-                    <div class="metric-value {val2_cls}">{aggregate_toxicity:.1f}%</div>
-                    <div class="metric-subtext">Cumulative toxic probability mass</div>
-                </div>
-                <div class="metric-card neutral">
-                    <div class="metric-label">Category Certainty</div>
-                    <div class="metric-value blue">{cert_val:.1f}%</div>
-                    <div class="metric-subtext">{cert_sub}</div>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        # ── Verdict Banner ────────────────────────────────────────────────────
-        if is_flagged:
-            if policy_triggered:
-                banner_title = "🚨 Critical Safety Violation — Direct Threat / Harassment Detected"
-                banner_body = (
-                    f"<strong>Detection Mechanism:</strong> Layer 1 Safety Guard (Severe Violence &amp; Threat Policy Gate)<br>"
-                    f"<strong>Assigned Category:</strong> {top_toxic_category.replace('_', ' ').title()}<br>"
-                    f"<strong>Cumulative Harassment Risk:</strong> {aggregate_toxicity:.1f}%<br>"
-                    f"<em>Explicit statements threatening violence or demographic attacks violate community safety standards.</em>"
-                )
-            else:
-                banner_title = "🚨 Harassment / Toxic Intent Detected"
-                banner_body = (
-                    f"<strong>Detection Mechanism:</strong> Layer 2 — Fine-Tuned DistilBERT Transformer Classifier<br>"
-                    f"<strong>Cumulative Harassment Risk:</strong> {aggregate_toxicity:.1f}% (Threshold: {toxicity_threshold}%)<br>"
-                    f"<strong>Leading Category:</strong> {top_toxic_category.replace('_', ' ').title()} ({top_toxic_prob:.1f}%)<br>"
-                    f"<em>{LABEL_DESCRIPTIONS.get(top_toxic_category, '')}</em>"
-                )
-
-            st.markdown(
-                f"""
-                <div class="verdict-banner flagged">
-                    <div class="verdict-banner-title red">{banner_title}</div>
-                    <p class="verdict-detail">{banner_body}</p>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-        else:
-            if affirmation_triggered:
-                banner_title = "✅ Safe — Positive Affirmation Verified"
-                banner_body = (
-                    f"<strong>Detection Mechanism:</strong> Layer 1 Identity-Term De-biasing Guard (Empowering Affirmation)<br>"
-                    f"<strong>Safe Probability:</strong> {safe_prob:.1f}%<br>"
-                    f"<strong>Cumulative Toxicity Risk:</strong> Only {aggregate_toxicity:.1f}%<br>"
-                    f"<em>Statement contains positive, supportive language with zero derogatory or abusive markers.</em>"
-                )
-            else:
-                banner_title = "✅ Safe — Non-Harassment Content Verified"
-                banner_body = (
-                    f"<strong>Detection Mechanism:</strong> Layer 2 — Fine-Tuned DistilBERT Transformer Classifier<br>"
-                    f"<strong>Safe Probability:</strong> {safe_prob:.1f}%<br>"
-                    f"<strong>Cumulative Toxicity Risk:</strong> Only {aggregate_toxicity:.1f}% "
-                    f"(well below the {toxicity_threshold}% safety gate)<br>"
-                    f"<em>No significant harassment signal detected across any of the six classification categories.</em>"
-                )
-
-            st.markdown(
-                f"""
-                <div class="verdict-banner safe-bg">
-                    <div class="verdict-banner-title green">{banner_title}</div>
-                    <p class="verdict-detail">{banner_body}</p>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-        # ── Automated Moderation Action & Censor Preview ──────────────────────
-        action_type = res["action"]
-        if action_type == "QUARANTINE":
-            pill_html = '<span class="action-pill quarantine">🛑 Quarantine & Block</span>'
-            action_desc = "Content blocked from public timeline. Marked for immediate administrator review."
-        elif action_type == "HOLD_FOR_REVIEW":
-            pill_html = '<span class="action-pill review">⚠️ Hold For Review</span>'
-            action_desc = "Content flagged with borderline risk. Sent to human moderator queue before public release."
-        else:
-            pill_html = '<span class="action-pill approve">✅ Auto-Approved</span>'
-            action_desc = "Content cleared all safety thresholds. Permitted for immediate public display."
-
-        st.markdown(
-            f"""
-            <div class="action-box">
-                <div class="action-header">
-                    <div>
-                        <strong style="color:#1E293B;font-size:0.92rem;">🛡️ Automated Moderation Action & Feed Sanitizer Preview</strong>
-                        <div style="font-size:0.78rem;color:#64748B;margin-top:0.2rem;">{action_desc}</div>
-                    </div>
-                    <div>{pill_html}</div>
-                </div>
-                <div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#64748B;margin-bottom:0.4rem;">
-                    Sanitized Feed Representation:
-                </div>
-                <div class="redacted-preview">{res["sanitized_html"]}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        # ── Matplotlib Horizontal Bar Chart ───────────────────────────────────
-        st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
-        st.markdown(
-            '<div class="section-label"><span class="dot"></span> Category Probability Distribution</div>',
-            unsafe_allow_html=True,
-        )
-
-        chart_df_sorted = prob_df.sort_values("Probability (%)", ascending=True)
-        categories = chart_df_sorted["Category"].tolist()
-        values = chart_df_sorted["Probability (%)"].tolist()
-        bar_colors = ["#16A34A" if c == "not_cyberbullying" else "#DC2626" for c in categories]
-
-        fig, ax = plt.subplots(figsize=(9, 3.4))
-        fig.patch.set_facecolor("none")
-        fig.patch.set_alpha(0.0)
-        ax.set_facecolor("#F8FAFC")
-
-        bars_plot = ax.barh(
-            categories, values,
-            color=bar_colors,
-            height=0.55,
-            edgecolor="none",
-        )
-        for bar, val in zip(bars_plot, values):
-            ax.text(
-                min(val + 1.0, 101),
-                bar.get_y() + bar.get_height() / 2,
-                f"{val:.1f}%",
-                va="center",
-                ha="left",
-                fontsize=9.5,
-                fontweight="bold",
-                color="#1E293B",
-            )
-
-        ax.set_xlim(0, 108)
-        ax.set_xlabel("Probability (%)", fontsize=9.5, color="#64748B", labelpad=8)
-        ax.tick_params(axis="y", labelsize=10, colors="#1E293B", length=0)
-        ax.tick_params(axis="x", labelsize=9,  colors="#64748B", length=0)
-        ax.spines["top"].set_visible(False)
-        ax.spines["right"].set_visible(False)
-        ax.spines["left"].set_color("#E2E8F0")
-        ax.spines["bottom"].set_color("#E2E8F0")
-        ax.set_axisbelow(True)
-        ax.xaxis.grid(True, color="#F1F5F9", linewidth=0.8)
-
-        legend_handles = [
-            mpatches.Patch(facecolor="#DC2626", label="Toxic / Harassment"),
-            mpatches.Patch(facecolor="#16A34A", label="Safe Content"),
-        ]
-        ax.legend(
-            handles=legend_handles,
-            loc="lower right",
-            fontsize=9,
-            framealpha=0.8,
-            edgecolor="#E2E8F0",
-        )
-
-        plt.tight_layout(pad=0.8)
-
-        st.markdown('<div class="chart-card">', unsafe_allow_html=True)
-        st.markdown(
-            '<div class="chart-title">📊 Classification Output — All Six Categories</div>',
-            unsafe_allow_html=True,
-        )
-        st.pyplot(fig, use_container_width=True)
-        plt.close(fig)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        # ── Category Descriptions Reference Table ─────────────────────────────
-        with st.expander("📋  Category Descriptions & Taxonomy Reference"):
-            display_df = prob_df[["Category", "Description"]].copy()
-            st.dataframe(display_df, use_container_width=True, hide_index=True)
+        render_moderation_results(res, float(toxicity_threshold), key_suffix="single")
 
     # ── Disclaimers ───────────────────────────────────────────────────────────
     st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
@@ -1181,6 +1194,108 @@ with tab_single:
         """,
         unsafe_allow_html=True,
     )
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# TAB 2: SCREENSHOT & MEME OCR SCANNER
+# ═════════════════════════════════════════════════════════════════════════════
+with tab_image:
+    st.markdown(
+        '<div class="section-label"><span class="dot"></span> Step 1 — Upload Social Media Screenshot or Meme</div>',
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        "Extract embedded text from user-uploaded screenshots, memes, or chat exports via Optical Character Recognition (OCR), then pass the textual payload to the DistilBERT moderation pipeline."
+    )
+
+    col_up_left, col_up_right = st.columns([1.2, 1])
+    with col_up_left:
+        uploaded_image = st.file_uploader(
+            "Upload image or screenshot (.png, .jpg, .jpeg):",
+            type=["png", "jpg", "jpeg"],
+            help="Upload a screenshot of a tweet, Instagram comment, or chat message to moderate.",
+            key="ocr_uploader",
+        )
+    with col_up_right:
+        st.markdown("<p style='font-size:0.85rem;font-weight:600;color:#1E293B;margin-bottom:0.4rem;'>Or select a preloaded sample screenshot:</p>", unsafe_allow_html=True)
+        demo_img_choice = st.selectbox(
+            "Demo screenshots:",
+            [
+                "— Select sample screenshot —",
+                "Direct Threat DM (demo_threat_dm.png)",
+                "Racist Tweet Screenshot (demo_racist_tweet.png)",
+                "Supportive Chat (demo_support_chat.png)",
+            ],
+            key="ocr_demo_choice",
+            label_visibility="collapsed",
+        )
+
+    # Determine image source
+    active_image = None
+    fallback_text = ""
+    if uploaded_image is not None:
+        try:
+            active_image = Image.open(uploaded_image)
+        except Exception as e:
+            st.error(f"Error opening uploaded image: {e}")
+    elif demo_img_choice != "— Select sample screenshot —":
+        mapping = {
+            "Direct Threat DM (demo_threat_dm.png)": ("demo_threat_dm.png", "I will kill you and your entire family."),
+            "Racist Tweet Screenshot (demo_racist_tweet.png)": ("demo_racist_tweet.png", "Go back to your own country you dirty illegal immigrant, we hate your kind here."),
+            "Supportive Chat (demo_support_chat.png)": ("demo_support_chat.png", "Keep it up, you are doing a fantastic job with this project!"),
+        }
+        fname, txt = mapping[demo_img_choice]
+        fpath = PROJECT_ROOT / "data" / "demo_screenshots" / fname
+        if fpath.exists():
+            active_image = Image.open(fpath)
+            fallback_text = txt
+
+    if active_image is not None:
+        st.markdown("<hr style='border-color:#E2E8F0;margin:1rem 0'>", unsafe_allow_html=True)
+        col_img_view, col_img_ocr = st.columns([1, 1.2])
+
+        with col_img_view:
+            st.markdown("<p style='font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#64748B;'>🖼️ Image Preview</p>", unsafe_allow_html=True)
+            st.image(active_image, use_container_width=True)
+
+        with col_img_ocr:
+            st.markdown("<p style='font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#64748B;'>🔤 Extracted OCR Text</p>", unsafe_allow_html=True)
+
+            # Attempt OCR extraction
+            ocr_text = ""
+            ocr_success = False
+            if HAS_PYTESSERACT:
+                try:
+                    ocr_text = pytesseract.image_to_string(active_image).strip()
+                    if ocr_text:
+                        ocr_success = True
+                except Exception:
+                    ocr_success = False
+
+            if not ocr_success:
+                ocr_text = fallback_text
+
+            extracted_comment = st.text_area(
+                "Review or edit extracted text before moderation:",
+                value=ocr_text,
+                height=110,
+                placeholder="OCR text extracted from screenshot will appear here...",
+                key="ocr_extracted_text",
+            )
+
+            ocr_audit_clicked = st.button("🔍  Moderate Extracted Text", type="primary", use_container_width=True, key="btn_ocr_moderate")
+
+        if ocr_audit_clicked:
+            cleaned_ocr = extracted_comment.strip()
+            if not cleaned_ocr:
+                st.warning("⚠️ No text detected in this image. Please type or confirm the text to audit.")
+            elif len(cleaned_ocr) < 2:
+                st.warning("⚠️ Extracted text is too short for reliable analysis.")
+            else:
+                with st.spinner("Moderating extracted screenshot payload …"):
+                    res_img = moderate_single_comment(cleaned_ocr, model, tokenizer, float(toxicity_threshold))
+
+                render_moderation_results(res_img, float(toxicity_threshold), key_suffix="ocr")
 
 
 # ═════════════════════════════════════════════════════════════════════════════

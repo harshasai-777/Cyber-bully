@@ -12,3 +12,7 @@ matplotlib>=3.8.0
 
 # Interactive Web Application
 streamlit>=1.32.0
+
+# Multimodal OCR Preprocessing
+pytesseract>=0.3.10
+pillow>=10.0.0
