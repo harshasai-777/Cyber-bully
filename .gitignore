@@ -1,0 +1,39 @@
+# Python Cache & Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+
+# Large Model Weights and Checkpoints (Keep repository lightweight)
+models/*
+!models/.gitkeep
+!models/README.md
+*.safetensors
+*.bin
+*.pt
+*.pth
+checkpoints/
+
+# Datasets and Cache Folders
+.cache/
+data/cache/
+data/downloads/
+
+# Evaluation output images and reports (can be generated locally)
+# Keep .gitkeep in results
+results/*
+!results/.gitkeep
+
+# IDEs & System
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log

@@ -1,0 +1,14 @@
+# Core Deep Learning & NLP Frameworks
+torch>=2.0.0
+transformers>=4.40.0
+datasets>=2.18.0
+accelerate>=0.28.0
+
+# Machine Learning, Evaluation & Data Analysis
+scikit-learn>=1.4.0
+pandas>=2.0.0
+numpy>=1.24.0
+matplotlib>=3.8.0
+
+# Interactive Web Application
+streamlit>=1.32.0
