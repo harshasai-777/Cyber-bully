@@ -11,7 +11,7 @@ venv/
 env/
 ENV/
 
-# Large Model Weights and Checkpoints (Keep repository lightweight)
+# Large Model Weights and Checkpoints (Keeps repository lightweight for instant Cloud deployment)
 models/*
 !models/.gitkeep
 !models/README.md
