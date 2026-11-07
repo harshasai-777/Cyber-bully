@@ -16,6 +16,7 @@ import hashlib
 import io
 import re
 import sys
+import textwrap
 from datetime import datetime
 from pathlib import Path
 
@@ -1049,46 +1050,41 @@ CLASSIFICATION LEVEL  : {statute_info['severity']}
 ================================================================================
 """
 
-        st.markdown(
-            f"""
-            <div class="cyber-cell-card">
-                <div class="cyber-cell-header">
-                    <div>
-                        <strong style="color:#991B1B;font-size:1rem;display:flex;align-items:center;gap:0.4rem;">
-                            🚨 Cyber Cell Incident Escalation &amp; Legal Redressal
-                        </strong>
-                        <div style="font-size:0.78rem;color:#7F1D1D;margin-top:0.2rem;">
-                            This flagged content meets criteria for official legal reporting under Indian Cyber Law (IT Act 2000 &amp; BNS).
-                        </div>
-                    </div>
-                    <div>
-                        <span class="cyber-cell-badge">Case ID: {incident_id}</span>
-                    </div>
-                </div>
+        cyber_card_html = textwrap.dedent(f"""<div class="cyber-cell-card">
+<div class="cyber-cell-header">
+<div>
+<strong style="color:#991B1B;font-size:1rem;display:flex;align-items:center;gap:0.4rem;">
+🚨 Cyber Cell Incident Escalation &amp; Legal Redressal
+</strong>
+<div style="font-size:0.78rem;color:#7F1D1D;margin-top:0.2rem;">
+This flagged content meets criteria for official legal reporting under Indian Cyber Law (IT Act 2000 &amp; BNS).
+</div>
+</div>
+<div>
+<span class="cyber-cell-badge">Case ID: {incident_id}</span>
+</div>
+</div>
+<div class="cyber-grid">
+<div>
+<div class="cyber-item-label">Suspected Offense</div>
+<div class="cyber-item-val" style="color:#991B1B;">{statute_info['offense']}</div>
+</div>
+<div>
+<div class="cyber-item-label">Statutory Provisions</div>
+<div class="cyber-item-val" style="font-size:0.8rem;color:#334155;">{statute_info['act_sections']}</div>
+</div>
+<div>
+<div class="cyber-item-label">Legal Severity</div>
+<div class="cyber-item-val" style="color:#DC2626;">{statute_info['severity']}</div>
+</div>
+</div>
+<div class="cyber-hash-box">
+<strong>Forensic Tamper-Proof Evidence Signature (SHA-256):</strong><br>
+{sha256_hash}
+</div>
+</div>""").strip()
 
-                <div class="cyber-grid">
-                    <div>
-                        <div class="cyber-item-label">Suspected Offense</div>
-                        <div class="cyber-item-val" style="color:#991B1B;">{statute_info['offense']}</div>
-                    </div>
-                    <div>
-                        <div class="cyber-item-label">Statutory Provisions</div>
-                        <div class="cyber-item-val" style="font-size:0.8rem;color:#334155;">{statute_info['act_sections']}</div>
-                    </div>
-                    <div>
-                        <div class="cyber-item-label">Legal Severity</div>
-                        <div class="cyber-item-val" style="color:#DC2626;">{statute_info['severity']}</div>
-                    </div>
-                </div>
-
-                <div class="cyber-hash-box">
-                    <strong>Forensic Tamper-Proof Evidence Signature (SHA-256):</strong><br>
-                    {sha256_hash}
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        st.markdown(cyber_card_html, unsafe_allow_html=True)
 
         col_cyb1, col_cyb2, col_cyb3 = st.columns([1.5, 1.5, 1.2])
         with col_cyb1:
