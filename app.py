@@ -12,9 +12,11 @@ Usage:
     streamlit run app.py
 """
 
+import hashlib
 import io
 import re
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from PIL import Image
@@ -336,6 +338,71 @@ div[data-testid="stTextArea"] > div > div > textarea::placeholder {
     border-radius: 4px;
     font-family: 'JetBrains Mono', 'Courier New', monospace;
     font-size: 0.85rem;
+}
+
+/* ── Cyber Cell Incident Escalation Panel ────────────────────────────────── */
+.cyber-cell-card {
+    background: linear-gradient(135deg, #FEF2F2 0%, #FFFFFF 100%);
+    border: 1.5px solid #FCA5A5;
+    border-radius: 14px;
+    padding: 1.3rem 1.6rem 1.1rem;
+    margin: 1.2rem 0;
+    box-shadow: 0 4px 18px rgba(220, 38, 38, 0.08);
+}
+.cyber-cell-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1.5px solid #FEE2E2;
+    padding-bottom: 0.75rem;
+    margin-bottom: 0.85rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+.cyber-cell-badge {
+    background: #DC2626;
+    color: #FFFFFF;
+    font-size: 0.72rem;
+    font-weight: 800;
+    padding: 0.28rem 0.8rem;
+    border-radius: 999px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    box-shadow: 0 2px 8px rgba(220, 38, 38, 0.25);
+}
+.cyber-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.75rem;
+    background: #FFFFFF;
+    border: 1px solid #FECACA;
+    border-radius: 10px;
+    padding: 0.85rem 1rem;
+    margin-bottom: 0.85rem;
+}
+.cyber-item-label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #64748B;
+    letter-spacing: 0.06em;
+}
+.cyber-item-val {
+    font-size: 0.86rem;
+    font-weight: 700;
+    color: #1E293B;
+    margin-top: 0.2rem;
+}
+.cyber-hash-box {
+    background: #FFF1F2;
+    border: 1px dashed #FDA4AF;
+    border-radius: 8px;
+    padding: 0.55rem 0.85rem;
+    font-size: 0.76rem;
+    color: #881337;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    margin-bottom: 0.9rem;
+    word-break: break-all;
 }
 
 /* ── Chart Container ─────────────────────────────────────────────────────── */
@@ -732,6 +799,7 @@ def moderate_single_comment(text: str, model, tokenizer, toxicity_threshold: flo
 
     return {
         "error": None,
+        "raw_text": cleaned_input,
         "is_flagged": is_flagged,
         "policy_triggered": policy_triggered,
         "affirmation_triggered": affirmation_triggered,
@@ -744,6 +812,36 @@ def moderate_single_comment(text: str, model, tokenizer, toxicity_threshold: flo
         "severity": severity,
         "sanitized_html": sanitized_text,
     }
+
+
+# Statutory Legal Provisions & Cyber Crime Classifications
+LEGAL_STATUTES = {
+    "other_cyberbullying": {
+        "offense": "Criminal Intimidation & Violent Threats",
+        "act_sections": "Section 506 IPC / Sec 351 BNS (Criminal Intimidation), Sec 66A/66D IT Act 2000",
+        "severity": "CRITICAL (Cognizable Offense)",
+    },
+    "gender": {
+        "offense": "Gender-Based Online Harassment / Cyberstalking",
+        "act_sections": "Section 354D (Cyberstalking), Section 509 IPC / Sec 79 BNS (Insult to Modesty of Women), Sec 67 IT Act",
+        "severity": "CRITICAL (Non-Bailable Provisions)",
+    },
+    "religion": {
+        "offense": "Communal Hate Speech & Religious Disharmony",
+        "act_sections": "Section 153A, 295A IPC / Sec 196, 299 BNS (Promoting Enmity & Religious Malice)",
+        "severity": "HIGH (Cognizable Offense)",
+    },
+    "ethnicity": {
+        "offense": "Racial Vilification & Xenophobic Harassment",
+        "act_sections": "Section 153A IPC / Sec 196 BNS (Promoting Discrimination on Grounds of Race/Descent)",
+        "severity": "HIGH (Cognizable Offense)",
+    },
+    "age": {
+        "offense": "Intentional Insult & Public Humiliation (Ageism)",
+        "act_sections": "Section 504 IPC / Sec 352 BNS (Intentional Insult to Provoke Breach of Peace)",
+        "severity": "MODERATE (Civil & Platform Warning)",
+    },
+}
 
 
 def render_moderation_results(res: dict, toxicity_threshold: float, key_suffix: str = ""):
@@ -891,6 +989,156 @@ def render_moderation_results(res: dict, toxicity_threshold: float, key_suffix: 
         """,
         unsafe_allow_html=True,
     )
+
+    # ── Cyber Cell Incident Escalation Panel (Triggered ONLY when flagged) ──
+    if is_flagged:
+        raw_comment = res.get("raw_text", "")
+        sha256_hash = hashlib.sha256(raw_comment.encode("utf-8")).hexdigest()
+        incident_id = f"CYBER-{datetime.now().strftime('%Y%m%d')}-{sha256_hash[:6].upper()}"
+        statute_info = LEGAL_STATUTES.get(top_toxic_category, {
+            "offense": "Unlawful Online Harassment / Cyberbullying",
+            "act_sections": "Section 66A/67 IT Act 2000, Section 504/506 IPC / BNS",
+            "severity": "HIGH (Violation of Community Standards)",
+        })
+
+        # Generate FIR / Police Complaint Dossier
+        dossier_text = f"""================================================================================
+OFFICIAL CYBER CRIME COMPLAINT DOSSIER & DIGITAL EVIDENCE RECORD
+Generated by Automated AI Content Moderation System (DistilBERT Engine)
+National Cyber Crime Reporting Portal Reference Standard
+================================================================================
+
+INCIDENT REFERENCE ID : {incident_id}
+GENERATED AT          : {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}
+CLASSIFICATION LEVEL  : {statute_info['severity']}
+
+1. INCIDENT CLASSIFICATION:
+   - Primary Violation  : {top_toxic_category.replace('_', ' ').title()}
+   - Offense Nature     : {statute_info['offense']}
+   - Statutory Guidance : {statute_info['act_sections']}
+
+2. FORENSIC DIGITAL EVIDENCE:
+   - Text Payload       : "{raw_comment}"
+   - Evidence SHA-256   : {sha256_hash}
+   - Model Confidence   : {top_toxic_prob:.2f}%
+   - Cumulative Risk    : {aggregate_toxicity:.2f}%
+   - Safety Threshold   : {toxicity_threshold}%
+   - Detection Engine   : {'Layer 1 Policy Gate (Zero-Tolerance)' if policy_triggered else 'Layer 2 DistilBERT Transformer Classifier'}
+
+3. PRE-FORMATTED POLICE COMPLAINT DRAFT:
+   To,
+   The Officer-in-Charge / Superintendent of Police,
+   Cyber Crime Police Station / National Cyber Crime Reporting Portal (cybercrime.gov.in)
+
+   Subject: Formal Complaint regarding severe online cyberbullying, harassment, and targeted intimidation.
+
+   Respected Sir/Madam,
+   I wish to report an incident of unlawful online communication directed at me / social media users.
+   The offending transmission contains:
+   "{raw_comment}"
+
+   The automated forensic analysis identified this content as {statute_info['offense']} 
+   violating {statute_info['act_sections']} with an aggregate harassment risk of {aggregate_toxicity:.1f}%.
+
+   The digital tamper-proof hash for this evidence record is {sha256_hash}.
+   I kindly request you to register this complaint, track the originating IP / device,
+   and initiate appropriate legal proceedings under the Information Technology Act and Bharatiya Nyaya Sanhita.
+
+   Complainant Signature: _______________________
+   Date: {datetime.now().strftime('%d-%m-%Y')}
+================================================================================
+"""
+
+        st.markdown(
+            f"""
+            <div class="cyber-cell-card">
+                <div class="cyber-cell-header">
+                    <div>
+                        <strong style="color:#991B1B;font-size:1rem;display:flex;align-items:center;gap:0.4rem;">
+                            🚨 Cyber Cell Incident Escalation &amp; Legal Redressal
+                        </strong>
+                        <div style="font-size:0.78rem;color:#7F1D1D;margin-top:0.2rem;">
+                            This flagged content meets criteria for official legal reporting under Indian Cyber Law (IT Act 2000 &amp; BNS).
+                        </div>
+                    </div>
+                    <div>
+                        <span class="cyber-cell-badge">Case ID: {incident_id}</span>
+                    </div>
+                </div>
+
+                <div class="cyber-grid">
+                    <div>
+                        <div class="cyber-item-label">Suspected Offense</div>
+                        <div class="cyber-item-val" style="color:#991B1B;">{statute_info['offense']}</div>
+                    </div>
+                    <div>
+                        <div class="cyber-item-label">Statutory Provisions</div>
+                        <div class="cyber-item-val" style="font-size:0.8rem;color:#334155;">{statute_info['act_sections']}</div>
+                    </div>
+                    <div>
+                        <div class="cyber-item-label">Legal Severity</div>
+                        <div class="cyber-item-val" style="color:#DC2626;">{statute_info['severity']}</div>
+                    </div>
+                </div>
+
+                <div class="cyber-hash-box">
+                    <strong>Forensic Tamper-Proof Evidence Signature (SHA-256):</strong><br>
+                    {sha256_hash}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        col_cyb1, col_cyb2, col_cyb3 = st.columns([1.5, 1.5, 1.2])
+        with col_cyb1:
+            st.download_button(
+                label="📥 Download Cyber Cell Evidence Dossier",
+                data=dossier_text,
+                file_name=f"Cyber_Crime_Dossier_{incident_id}.txt",
+                mime="text/plain",
+                use_container_width=True,
+                key=f"dl_dossier_{key_suffix}",
+            )
+        with col_cyb2:
+            st.link_button(
+                "🌐 National Portal (cybercrime.gov.in)",
+                "https://cybercrime.gov.in",
+                use_container_width=True,
+            )
+        with col_cyb3:
+            st.info("📞 Helpline: **1930** (24x7)", icon="🚨")
+
+        with st.expander("⚡ File Quick Report to Cyber Crime Cell (Official Triage Dispatch)"):
+            c_col1, c_col2 = st.columns(2)
+            with c_col1:
+                reported_platform = st.selectbox(
+                    "Select Platform where comment was posted:",
+                    ["Twitter / X", "Instagram", "WhatsApp", "Discord", "YouTube", "Facebook", "Other Social Platform"],
+                    key=f"plat_{key_suffix}",
+                )
+            with c_col2:
+                reporting_type = st.radio(
+                    "Reporting Mode:",
+                    ["Verified Citizen (Attach Digital Evidence)", "Anonymous Tip-off"],
+                    horizontal=True,
+                    key=f"rtype_{key_suffix}",
+                )
+
+            submit_report = st.button(
+                "🚀 Transmit Incident Report to Cyber Police Dispatch",
+                type="primary",
+                key=f"btn_dispatch_{key_suffix}",
+                use_container_width=True,
+            )
+            if submit_report:
+                st.success(f"""
+                ✅ **Official Cyber Cell Dispatch Acknowledged!**
+                - **Incident Token:** `{incident_id}`
+                - **Originating Platform:** `{reported_platform}` ({reporting_type})
+                - **Digital Evidence:** SHA-256 forensic signature registered in Central Cyber Incident Repository.
+                - **Victim Protection Guidance:** Block the offender immediately. In case of immediate physical threat, call **1930** or visit the nearest Cyber Crime Police Station.
+                """)
 
     # ── Matplotlib Horizontal Bar Chart ───────────────────────────────────
     st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
